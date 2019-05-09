@@ -77,9 +77,9 @@ func main() {
 			ethernet := ethernetLayer.(*layers.Ethernet)
 			// des MAC is local mac then downStream, otherwise upStream
 			if ethernet.DstMAC.String() == macAddr {
-				downStreamDataSize += len(packet.Data())
+				downStreamDataSize += len(packet.Data())*8
 			} else {
-				upStreamDataSize += len(packet.Data())
+				upStreamDataSize += len(packet.Data())*8
 			}
 		}
 	}
