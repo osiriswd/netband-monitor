@@ -8,16 +8,22 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"log"
+	"strings"
 	"net"
 	"os"
+	"path/filepath"
+//	"bufio"
 	"time"
+	"strconv"
 )
 
 var (
-	downStreamDataSize = 0
-	upStreamDataSize   = 0
+	downStreamDataSize [10]int
+	upStreamDataSize   [10]int
 	deviceName        = flag.String("i", "eth0", "network interface device name")
 	filter		      = flag.String("f", "tcp", "filter")
+	separate          = flag.String("s", "", "separate network to display")
+	interval          = flag.Int("t", 10, "interval")
     snapshotLen int32  = 1024
     promiscuous bool   = false
     timeout     time.Duration = 30 * time.Second
@@ -66,24 +72,60 @@ func main() {
     }
 	
 	
-	go monitor() 
+
+	
+	//separate networks
+	separateNet := strings.Split(*separate, " ")
+	
+	go monitor(separateNet[:]) 
 	
 	// capture
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
 		// only ethernet
+		ipLayer := packet.Layer(layers.LayerTypeIPv4)
 		ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
-		if ethernetLayer != nil {
+		if ethernetLayer != nil &&  ipLayer != nil{
 			ethernet := ethernetLayer.(*layers.Ethernet)
+			ip := ipLayer.(*layers.IPv4)
 			// des MAC is local mac then downStream, otherwise upStream
 			if ethernet.DstMAC.String() == macAddr {
-				downStreamDataSize += len(packet.Data())*8
+				for i, displayNet := range separateNet {
+					if ipInCidr(ip.SrcIP.String(),displayNet) {
+						downStreamDataSize[i] += len(packet.Data())*8
+					}
+				}
 			} else {
-				upStreamDataSize += len(packet.Data())*8
+				for i, displayNet := range separateNet {
+					if ipInCidr(ip.DstIP.String(),displayNet) {
+						upStreamDataSize[i] += len(packet.Data())*8
+					}
+				}			
 			}
 		}
 	}
 }
+
+func ipInCidr(ip, cidr string) bool {
+    ipAddr := strings.Split(ip, `.`)
+    if len(ipAddr) < 4 {
+        return false
+    }
+    cidrArr := strings.Split(cidr, `/`)
+    if len(cidrArr) < 2 {
+        return false
+    }
+    var tmp = make([]string, 0)
+    for key, value := range strings.Split(`255.255.255.0`, `.`) {
+        iint, _ := strconv.Atoi(value)
+
+        iint2, _ := strconv.Atoi(ipAddr[key])
+
+        tmp = append(tmp, strconv.Itoa(iint&iint2))
+    }
+    return strings.Join(tmp, `.`) == cidrArr[0]
+}
+
 
 func findDeviceIpv4(device pcap.Interface) string {
 	for _, addr := range device.Addresses {
@@ -118,11 +160,48 @@ func findMacAddrByIp(ip string) (string, error) {
 	return "", errors.New(fmt.Sprintf("no device has given ip: %s", ip))
 }
 
-func monitor() {
+func PathExists(path string) (bool, error) {
+    _, err := os.Stat(path)
+    if err == nil {
+        return true, nil
+    }
+    if os.IsNotExist(err) {
+        return false, nil
+    }
+    return false, err
+}
+
+func monitor(separateNet []string) string {
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
+	}
+	logdir := fmt.Sprintf("%s/log",dir)
+	exist, err := PathExists(logdir)
+	if err != nil {
+		fmt.Printf("get dir error![%v]\n", err)
+    }
+	if !exist {
+		err := os.Mkdir(logdir, os.ModePerm)
+		if err != nil {
+            fmt.Printf("mkdir failed![%v]\n", err)
+        }
+	}
 	for {
-		os.Stdout.WriteString(fmt.Sprintf("\rReceived:%.2fkb/s \t Sent:%.2fkb/s", float32(downStreamDataSize)/1024/1, float32(upStreamDataSize)/1024/1))
-		downStreamDataSize = 0
-		upStreamDataSize = 0
-		time.Sleep(1 * time.Second)
+		for i, displayNet := range separateNet {
+		logFile := strings.Split(displayNet,"/")
+		logFilename := logFile[0]+"_"+logFile[1]
+		logPath := fmt.Sprintf("%s/%s.txt",logdir,logFilename)
+		outputFile, outputError := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE, 0666)
+		if outputError != nil {
+			fmt.Printf("An error occurred with file opening or creation %s\n",logPath)
+		}
+		defer outputFile.Close()
+		//outputWriter := bufio.NewWriter(outputFile)
+		outputFile.WriteString(fmt.Sprintf("\r%s: Received:%d b/s Sent:%d b/s", displayNet, int(downStreamDataSize[i]/(*interval)), int(upStreamDataSize[i]/(*interval))))
+		downStreamDataSize[i] = 0
+		upStreamDataSize[i] = 0
+		}
+		time.Sleep(time.Duration(int(*interval)) * time.Second)
 	}
 }
