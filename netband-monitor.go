@@ -106,26 +106,36 @@ func main() {
 	}
 }
 
-func ipInCidr(ip, cidr string) bool {
+func ipInCidr(ip, mask string) bool {
+	_, ipNet, err := net.ParseCIDR(mask)
+    if err != nil {
+        fmt.Println(err)
+    }
+    val := make([]byte, len(ipNet.Mask))
+    copy(val, ipNet.Mask)
+
+    var s []string
+    for _, i := range val[:] {
+        s = append(s, strconv.Itoa(int(i)))
+    }
+	cidr := strings.Join(s, ".")
+	
     ipAddr := strings.Split(ip, `.`)
     if len(ipAddr) < 4 {
         return false
     }
-    cidrArr := strings.Split(cidr, `/`)
+    cidrArr := strings.Split(mask, `/`)
     if len(cidrArr) < 2 {
         return false
     }
     var tmp = make([]string, 0)
-    for key, value := range strings.Split(`255.255.255.0`, `.`) {
+    for key, value := range strings.Split(cidr, `.`) {
         iint, _ := strconv.Atoi(value)
-
         iint2, _ := strconv.Atoi(ipAddr[key])
-
         tmp = append(tmp, strconv.Itoa(iint&iint2))
     }
     return strings.Join(tmp, `.`) == cidrArr[0]
 }
-
 
 func findDeviceIpv4(device pcap.Interface) string {
 	for _, addr := range device.Addresses {
@@ -205,3 +215,4 @@ func monitor(separateNet []string) string {
 		time.Sleep(time.Duration(int(*interval)) * time.Second)
 	}
 }
+
