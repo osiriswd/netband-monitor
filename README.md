@@ -5,12 +5,14 @@ go build -ldflags '-w -s' netband-monitor
 
 Parameters:
 
--i eth1:　network interface device name
+-i interface:　Listen to packets on interface.
 
--f "tcp and port 80" : pcap filter
+-f "filter code" : Use  filter code to select the packets to count.
 
--s "10.0.29.0/24 10.0.31.0/24": separate network to display
+-s "net1/mask1 net2/mask2": separate networks to display
 
--t 60: flush log files every 60s
+-t seconds: flush log files every t seconds
 
-./netband-monitor -i eth1 -f "net 10.0.0.0/8" -s "10.0.29.0/24 10.0.31.0/24" -t 5 
+Example:
+
+./netband-monitor -i eth1 -f "net 10.0.0.0/8" -s "10.0.29.0/24 10.0.31.0/24" -t 5
